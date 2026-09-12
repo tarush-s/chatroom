@@ -23,3 +23,19 @@ add_test(
     NAME smart_fd_test
     COMMAND smart_fd_test
 )
+
+add_executable(socket_test
+    networking/socket_test.cpp
+    networking/socket.cpp
+)
+
+target_link_libraries(socket_test
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+)
+
+add_test(
+    NAME socket_test
+    COMMAND $<TARGET_FILE:socket_test>
+)
