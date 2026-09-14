@@ -13,20 +13,27 @@ int CreateTestFd() {
     return ::open("/dev/null", O_RDONLY);
 }
 
+// Checks whether a raw fd number is still a valid open descriptor,
+// without closing it (so we don't risk closing an unrelated fd that
+// the OS may have since reused for something else).
+bool IsFdOpen(int fd) {
+    return ::fcntl(fd, F_GETFD) != -1;
+}
+
 }  // namespace
 
 // ------------------------------------------------------------
 // Construction
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, DefaultConstructorCreatesInvalidFd) {
+TEST(SmartFdTest, DefaultConstructorCreatesInvalidFd) {
     SmartFd fd;
 
     EXPECT_FALSE(fd.IsValid());
     EXPECT_EQ(fd.Get(), -1);
 }
 
-TEST(UniqueFdTest, ConstructorTakesOwnershipOfFd) {
+TEST(SmartFdTest, ConstructorTakesOwnershipOfFd) {
     int raw_fd = CreateTestFd();
     ASSERT_NE(raw_fd, -1);
 
@@ -41,7 +48,7 @@ TEST(UniqueFdTest, ConstructorTakesOwnershipOfFd) {
 // Reset
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, ResetClosesCurrentFdAndBecomesInvalid) {
+TEST(SmartFdTest, ResetClosesCurrentFdAndBecomesInvalid) {
     int raw_fd = CreateTestFd();
     ASSERT_NE(raw_fd, -1);
 
@@ -55,10 +62,10 @@ TEST(UniqueFdTest, ResetClosesCurrentFdAndBecomesInvalid) {
     EXPECT_EQ(fd.Get(), -1);
 
     // The FD should have been closed.
-    EXPECT_EQ(::close(raw_fd), -1);
+    EXPECT_FALSE(IsFdOpen(raw_fd));
 }
 
-TEST(UniqueFdTest, ResetReplacesFd) {
+TEST(SmartFdTest, ResetReplacesFd) {
     int first_fd = CreateTestFd();
     int second_fd = CreateTestFd();
 
@@ -73,9 +80,9 @@ TEST(UniqueFdTest, ResetReplacesFd) {
     EXPECT_EQ(fd.Get(), second_fd);
 
     // first_fd should have been closed.
-    EXPECT_EQ(::close(first_fd), -1);
+    EXPECT_FALSE(IsFdOpen(first_fd));
 
-    // second_fd is owned by SmartFd, so don't close it here.
+    // second_fd is owned by SmartFd, so don't touch it here.
 }
 
 
@@ -83,7 +90,7 @@ TEST(UniqueFdTest, ResetReplacesFd) {
 // Move constructor
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, MoveConstructorTransfersOwnership) {
+TEST(SmartFdTest, MoveConstructorTransfersOwnership) {
     int raw_fd = CreateTestFd();
     ASSERT_NE(raw_fd, -1);
 
@@ -105,7 +112,7 @@ TEST(UniqueFdTest, MoveConstructorTransfersOwnership) {
 // Move assignment
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, MoveAssignmentTransfersOwnership) {
+TEST(SmartFdTest, MoveAssignmentTransfersOwnership) {
     int first_fd = CreateTestFd();
     int second_fd = CreateTestFd();
 
@@ -126,7 +133,7 @@ TEST(UniqueFdTest, MoveAssignmentTransfersOwnership) {
     EXPECT_EQ(second.Get(), -1);
 
     // first_fd should have been closed during move assignment.
-    EXPECT_EQ(::close(first_fd), -1);
+    EXPECT_FALSE(IsFdOpen(first_fd));
 }
 
 
@@ -134,13 +141,18 @@ TEST(UniqueFdTest, MoveAssignmentTransfersOwnership) {
 // Self move assignment
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, SelfMoveAssignmentDoesNothing) {
+TEST(SmartFdTest, SelfMoveAssignmentDoesNothing) {
     int raw_fd = CreateTestFd();
     ASSERT_NE(raw_fd, -1);
 
     SmartFd fd(raw_fd);
 
-    fd = std::move(fd);
+    // Route through a reference so the compiler can't flag this as an
+    // obviously-self move at compile time (-Wself-move); this also better
+    // mirrors how self-assignment actually happens in practice (via an
+    // alias/reference, not a literal repeated variable name).
+    SmartFd& fd_ref = fd;
+    fd = std::move(fd_ref);
 
     EXPECT_TRUE(fd.IsValid());
     EXPECT_EQ(fd.Get(), raw_fd);
@@ -151,7 +163,7 @@ TEST(UniqueFdTest, SelfMoveAssignmentDoesNothing) {
 // Destructor
 // ------------------------------------------------------------
 
-TEST(UniqueFdTest, DestructorClosesFd) {
+TEST(SmartFdTest, DestructorClosesFd) {
     int raw_fd = CreateTestFd();
     ASSERT_NE(raw_fd, -1);
 
@@ -162,5 +174,5 @@ TEST(UniqueFdTest, DestructorClosesFd) {
     }
 
     // fd should have been closed when SmartFd was destroyed.
-    EXPECT_EQ(::close(raw_fd), -1);
+    EXPECT_FALSE(IsFdOpen(raw_fd));
 }

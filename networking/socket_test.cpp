@@ -167,8 +167,8 @@ TEST(SocketTest, ClientCanSendAndServerCanReceive) {
     std::string message = "Hello server";
 
     ssize_t bytes_sent = client.Send(
-        client.GetFd(),
-        message
+        message.data(),
+        message.size()
     );
 
     ASSERT_EQ(
@@ -176,11 +176,13 @@ TEST(SocketTest, ClientCanSendAndServerCanReceive) {
         static_cast<ssize_t>(message.size())
     );
 
-    std::string received;
+    // Receive needs a pre-sized buffer to write into now that Receive
+    // takes a raw void* rather than resizing a std::string internally.
+    std::string received(message.size(), '\0');
 
     ssize_t bytes_received = accepted.Receive(
-        accepted.GetFd(),
-        received
+        received.data(),
+        received.size()
     );
 
     ASSERT_EQ(
@@ -231,8 +233,8 @@ TEST(SocketTest, ServerCanSendAndClientCanReceive) {
     std::string message = "Hello client";
 
     ssize_t bytes_sent = accepted.Send(
-        accepted.GetFd(),
-        message
+        message.data(),
+        message.size()
     );
 
     ASSERT_EQ(
@@ -240,11 +242,11 @@ TEST(SocketTest, ServerCanSendAndClientCanReceive) {
         static_cast<ssize_t>(message.size())
     );
 
-    std::string received;
+    std::string received(message.size(), '\0');
 
     ssize_t bytes_received = client.Receive(
-        client.GetFd(),
-        received
+        received.data(),
+        received.size()
     );
 
     ASSERT_EQ(
@@ -281,25 +283,32 @@ TEST(SocketTest, ReceiveReturnsZeroWhenPeerClosesConnection) {
 
     uint16_t port = ntohs(addr.sin_port);
 
-    Socket client;
+    Socket accepted;
 
-    EndPoint client_endpoint{
-        "127.0.0.1",
-        port
-    };
+    {
+        // Scope client so its own destructor closes its fd exactly once,
+        // instead of us closing the raw fd out from under a live Socket
+        // (which still thinks it owns that fd and would double-close it
+        // when it's later destroyed).
+        Socket client;
 
-    ASSERT_NO_THROW(client.Connect(client_endpoint));
+        EndPoint client_endpoint{
+            "127.0.0.1",
+            port
+        };
 
-    Socket accepted = server.Accept();
+        ASSERT_NO_THROW(client.Connect(client_endpoint));
 
-    // Client closes its connection.
-    ::close(client.GetFd());
+        accepted = server.Accept();
 
-    std::string received;
+        // client goes out of scope here, closing the connection.
+    }
+
+    std::string received(16, '\0');
 
     ssize_t result = accepted.Receive(
-        accepted.GetFd(),
-        received
+        received.data(),
+        received.size()
     );
 
     EXPECT_EQ(result, 0);

@@ -60,18 +60,54 @@ void Socket::Connect(const EndPoint& endpoint) {
     }
 }
 
-ssize_t Socket::Send(int fd, const std::string& message) {
-    return ::send(fd, message.data(), message.size(), 0);
+ssize_t  Socket::Send(const void* data, std::size_t len){
+    ssize_t sent;
+    do {
+        sent = ::send(fd_.Get(), data, len, MSG_NOSIGNAL);
+    } while (sent < 0 && errno == EINTR);
+
+    return sent;
 }
 
-ssize_t Socket::Receive(int fd, std::string& message) {
-    message.resize(1024);
-    ssize_t bytes_received = recv(fd, message.data(), message.size(), 0);
-    if (bytes_received > 0) {
-        message.resize(static_cast<std::size_t>(bytes_received));
-    }
+ssize_t Socket::Receive(void* buffer, std::size_t len) {
+    ssize_t received;
+    do {
+        received = ::recv(fd_.Get(), buffer, len, 0);
+    } while (received < 0 && errno == EINTR);
 
-    return bytes_received;
+    return received;
+}
+
+bool Socket::SendAll(const void* data, std::size_t len) {
+    const char* ptr = static_cast<const char*>(data);
+    std::size_t total_sent = 0;
+    
+    while(total_sent < len ) {
+        ssize_t sent = Send(ptr + total_sent, len - total_sent);
+        if (sent < 0) {
+            return false;
+        }
+
+        total_sent += static_cast<std::size_t>(sent);
+    }
+    
+    return true;
+}
+
+bool Socket::ReceiveAll(void* buffer, std::size_t len) {
+    char* ptr = static_cast<char*>(buffer);
+    std::size_t total_received = 0;
+    
+    while(total_received < len ) {
+        ssize_t received = Receive(ptr + total_received, len - total_received);
+        if (received <= 0) {
+            return false;
+        }
+
+        total_received += static_cast<std::size_t>(received);
+    }
+    
+    return true;
 }
 
 int Socket::GetFd() const {

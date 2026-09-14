@@ -21,9 +21,12 @@ public:
 
     Socket Accept();
     void Connect(const EndPoint& endpoint);
+
+    bool SendAll(const void* data, std::size_t len);
+    bool ReceiveAll(void* buffer, std::size_t len);
     
-    ssize_t Send(int fd, const std::string& message);
-    ssize_t Receive(int fd, std::string& message);
+    ssize_t Send(const void* data, std::size_t len);
+    ssize_t Receive(void* buffer, std::size_t len);
 
     [[nodiscard]] int GetFd() const;
     [[nodiscard]] bool IsValid() const;
